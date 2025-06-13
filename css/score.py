@@ -759,6 +759,7 @@ class BaseWeightedCombinationScorer(
 
         summary = self._combine_children(summaries)
         summary = self._add_dot_product(summary)
+        comet_experiment.log_table(f"score_summary.csv", summary)
         return summary
 
     @property
