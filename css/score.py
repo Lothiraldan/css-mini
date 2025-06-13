@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from __future__ import annotations
+import comet_ml
 
 from abc import ABC, abstractmethod
 import logging
@@ -300,6 +301,7 @@ class InterpolatedPeerMetric(
         self._semantic_flip = semantic_flip
         super().__init__(name, **kwargs)
         self._validate_metric_params()
+        self._comet_experiment = comet_ml.get_running_experiment()
 
     def _validate_metric_params(self) -> None:
         if self._trim_max is True and self._max is None:
@@ -395,6 +397,23 @@ class InterpolatedPeerMetric(
         self.reps = reps
         self.param_model.fit(reps, fit_params)
 
+        # Logs the parameters of the metric inside fit so it have the correct comet context name
+        self._comet_experiment.log_parameters(
+            {
+                "peer_dims": self._peer_dims,
+                "n_neighbors": self._n_neighbors,
+                "trim_samples": self._trim_samples,
+                "n_reps_per_dim": self._n_reps_per_dim,
+                "min": self._min,
+                "max": self._max,
+                "trim_min": self._trim_min,
+                "trim_max": self._trim_max,
+                "floc": self._floc,
+                "fscale": self._fscale,
+                "semantic_flip": self._semantic_flip,
+            }
+        )
+
         r2 = self.param_model.r2
         if r2 > self.R2_GREEN_GE:
             self._logger.info(f"Model fit: R^2={r2:.2f}")
@@ -402,6 +421,8 @@ class InterpolatedPeerMetric(
             self._logger.warning(f"Model fit: R^2={r2:.2f}")
         else:
             self._logger.critical(f"High risk model fit! R^2={r2:.2f}")
+
+        self._comet_experiment.log_metric("R^2", r2)
 
         self.nonzero_count = (dataframe[self.name] > 0).sum()
         return self
@@ -706,7 +727,10 @@ class BaseWeightedCombinationScorer(
             include column names that match the names of the ``BaseMetric`` descendants.
         """
         for obj in self.children.values():
-            obj.fit(dataframe)
+            comet_experiment = comet_ml.get_running_experiment()
+
+            with comet_experiment.context_manager(obj.name):
+                obj.fit(dataframe)
         return self
 
     def score(
@@ -729,6 +753,10 @@ class BaseWeightedCombinationScorer(
         for name, obj in self.children.items():
             summary = obj.score(dataframe, scoring_scale)
             summaries[name] = summary
+
+            comet_experiment = comet_ml.get_running_experiment()
+            comet_experiment.log_table(f"score_{name}.csv", summary)
+
         summary = self._combine_children(summaries)
         summary = self._add_dot_product(summary)
         return summary

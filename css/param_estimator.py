@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from __future__ import annotations
+import comet_ml
+import comet_ml.loggers.sklearn_logger
 
 from abc import ABC
 from typing import TYPE_CHECKING
@@ -75,6 +77,12 @@ class ParamBaseEstimator(
             "a_min": Y.min(axis=0),
             "a_max": Y.max(axis=0),
         }
+
+        exp = comet_ml.get_running_experiment()
+        assert exp is not None
+
+        comet_ml.loggers.sklearn_logger._log_pipeline_params(exp, self.model)
+
         self.model.fit(X, Y)
         self.r2 = self._model.score(X, Y)
 
